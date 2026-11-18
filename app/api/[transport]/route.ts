@@ -16,11 +16,23 @@ const mcpHandler = createMcpHandler(
   }
 );
 
+
 async function handler(req: Request) {
   const url = new URL(req.url);
-  const apiKey = url.searchParams.get("opendart_key");
-  return runWithRequestApiKey(apiKey, () => mcpHandler(req));
+
+  const expectedToken = process.env.MCP_ACCESS_TOKEN;
+  const providedToken = url.searchParams.get("access_token");
+
+  if (!expectedToken || providedToken !== expectedToken) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  return runWithRequestApiKey(
+    undefined,
+    () => mcpHandler(req)
+  );
 }
+
 
 // Without an explicit HEAD export, Next.js routes HEAD to the GET handler and
 // mcp-handler never finishes the response, so the function hangs until its
