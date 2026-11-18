@@ -18,19 +18,62 @@ const mcpHandler = createMcpHandler(
 
 
 async function handler(req: Request) {
-  const url = new URL(req.url);
+  const issuer = "https://fond-fruit-29-staging.authkit.app";
 
-  const expectedToken = process.env.MCP_ACCESS_TOKEN;
-  const providedToken = url.searchParams.get("access_token");
+  const resource =
+    "https://open-dart-mcp-server-taupe.vercel.app/api/mcp";
 
-  if (!expectedToken || providedToken !== expectedToken) {
-    return new Response("Unauthorized", { status: 401 });
+  const metadata =
+    "https://open-dart-mcp-server-taupe.vercel.app/.well-known/oauth-protected-resource";
+
+  const unauthorized = () =>
+    new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "WWW-Authenticate":
+            `Bearer resource_metadata="${metadata}"`,
+        },
+      }
+    );
+
+  const authorization = req.headers.get("authorization");
+
+  if (!authorization?.startsWith("Bearer ")) {
+    return unauthorized();
   }
 
-  return runWithRequestApiKey(
-    undefined,
-    () => mcpHandler(req)
-  );
+  const token = authorization.slice(7);
+
+  try {
+    const { jwtVerify, createRemoteJWKSet } =
+      await import("jose");
+
+    const jwks = createRemoteJWKSet(
+      new URL(`${issuer}/oauth2/jwks`)
+    );
+
+    const { payload } = await jwtVerify(token, jwks, {
+      issuer,
+      audience: resource,
+    });
+
+    if (
+      payload.sub !== process.env.WORKOS_ALLOWED_USER_ID ||
+      payload.sub_profile === "ai_agent"
+    ) {
+      return unauthorized();
+    }
+
+    return runWithRequestApiKey(
+      undefined,
+      () => mcpHandler(req)
+    );
+  } catch {
+    return unauthorized();
+  }
 }
 
 
